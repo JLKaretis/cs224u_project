@@ -44,7 +44,7 @@ class HfBertClassifierModel(nn.Module):
             nn.Linear(self.max_sentence_length, self.hidden_dim))
 
         # initialize a random tensor
-        self.L = torch.randn(self.hidden_dim, self.hidden_dim)
+        self.L = torch.randn(self.hidden_dim, self.hidden_dim).to(self.device)
 
     def save_pretrained(self, save_directory):
         """ Save a model and its configuration file to a directory, so that it
@@ -130,11 +130,11 @@ class HfBertClassifier(TorchShallowNeuralClassifier):
         if X_dev is not None:
             dev_iter = kwargs.get('dev_iter', 5)
         # Data prep:
-        all_input_ids = torch.tensor([f.input_ids for f in X], dtype=torch.long)
-        all_input_mask = torch.tensor([f.input_mask for f in X], dtype=torch.long)
-        all_segment_ids = torch.tensor([f.segment_ids for f in X], dtype=torch.long)
-        all_rels = torch.tensor([f.rels for f in X], dtype=torch.float)
-        all_pairs = torch.tensor([f.head_tail_pairs for f in X], dtype=torch.bool)
+        all_input_ids = torch.tensor([f.input_ids for f in X], dtype=torch.long).to(self.device)
+        all_input_mask = torch.tensor([f.input_mask for f in X], dtype=torch.long).to(self.device)
+        all_segment_ids = torch.tensor([f.segment_ids for f in X], dtype=torch.long).to(self.device)
+        all_rels = torch.tensor([f.rels for f in X], dtype=torch.float).to(self.device)
+        all_pairs = torch.tensor([f.head_tail_pairs for f in X], dtype=torch.bool).to(self.device)
         dataset = TensorDataset(all_input_ids, all_input_mask, all_segment_ids, all_rels, all_pairs)
         dataloader = torch.utils.data.DataLoader(
             dataset, batch_size=self.batch_size, shuffle=True,
@@ -229,10 +229,10 @@ class HfBertClassifier(TorchShallowNeuralClassifier):
         with torch.no_grad():
             self.model.to(self.device)
             # Data prep:
-            all_input_ids = torch.tensor([f.input_ids for f in X], dtype=torch.long)
-            all_input_mask = torch.tensor([f.input_mask for f in X], dtype=torch.long)
-            all_segment_ids = torch.tensor([f.segment_ids for f in X], dtype=torch.long)
-            all_rels = torch.tensor([f.rels for f in X], dtype=torch.float)
+            all_input_ids = torch.tensor([f.input_ids for f in X], dtype=torch.long).to(self.device)
+            all_input_mask = torch.tensor([f.input_mask for f in X], dtype=torch.long).to(self.device)
+            all_segment_ids = torch.tensor([f.segment_ids for f in X], dtype=torch.long).to(self.device)
+            all_rels = torch.tensor([f.rels for f in X], dtype=torch.float).to(self.device)
             dataset = TensorDataset(all_input_ids, all_input_mask, all_segment_ids, all_rels)
             dataloader = torch.utils.data.DataLoader(
                 dataset, batch_size=self.batch_size, shuffle=True,
