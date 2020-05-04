@@ -90,6 +90,7 @@ class HfBertClassifierModel(nn.Module):
             position_ids=position_ids,
             head_mask=head_mask,
             inputs_embeds=inputs_embeds,
+            class_weight=class_weight
         )
         head = self.head(final_hidden_states)
         tail = self.tail(final_hidden_states)
@@ -135,6 +136,7 @@ class HfBertClassifier(TorchShallowNeuralClassifier):
         all_segment_ids = torch.tensor([f.segment_ids for f in X], dtype=torch.long).to(self.device)
         all_rels = torch.tensor([f.rels for f in X], dtype=torch.float).to(self.device)
         all_pairs = torch.tensor([f.head_tail_pairs for f in X], dtype=torch.bool).to(self.device)
+        all_weight = torch.tensor([f.class_weight for f in X], dtype=torch.float).to(self.device)
         dataset = TensorDataset(all_input_ids, all_input_mask, all_segment_ids, all_rels, all_pairs)
         dataloader = torch.utils.data.DataLoader(
             dataset, batch_size=self.batch_size, shuffle=True,
@@ -151,7 +153,7 @@ class HfBertClassifier(TorchShallowNeuralClassifier):
         self.model.to(self.device)
         self.model.train()
         # Optimization:
-        loss = nn.BCELoss()
+        loss = nn.BCELoss(weight=all_weight)
         global_step = 0
         # Train:
         with tqdm(total=self.max_iter) as pbar:
@@ -301,6 +303,7 @@ def convert_examples_to_features(
     pad_token_label_id=-100,
     sequence_a_segment_id=0,
     mask_padding_with_zero=True,
+    weight_positive_class=1000,
 ):
     """ Loads a data file into a list of `InputBatch`s
         `cls_token_at_end` define the location of the CLS token:
@@ -478,15 +481,20 @@ def convert_examples_to_features(
             for pair in head_tail_pairs:
                 pair_map[pair[0], pair[1]] = 1
 
+            #add weight for loss func
+            class_weight = relation_pairs_final * weight_positive_class
+            
             assert len(input_ids) == max_seq_length
             assert len(input_mask) == max_seq_length
             assert len(segment_ids) == max_seq_length
             assert len(relation_pairs_final) == max_seq_length
+            assert len(class_weight) == max_seq_length
 
             features.append(
                 InputFeatures(input_ids=input_ids, input_mask=input_mask,
                               segment_ids=segment_ids, rels=relation_pairs_final,
-                              head_tail_pairs=pair_map)
+                              head_tail_pairs=pair_map,
+                              class_weight=class_weight)
             )
     return features
 
