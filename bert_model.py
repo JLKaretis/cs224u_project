@@ -75,7 +75,8 @@ class HfBertClassifierModel(nn.Module):
                 token_type_ids=None,
                 position_ids=None,
                 head_mask=None,
-                inputs_embeds=None,):
+                inputs_embeds=None,
+                weight=None):
         """Here, `X` is an np.array in which each element is a pair
         consisting of an index into the BERT embedding and a 1 or 0
         indicating whether the token is masked. The `fit` method will
