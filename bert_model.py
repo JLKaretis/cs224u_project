@@ -286,6 +286,7 @@ class InputFeatures(object):
         self.segment_ids = segment_ids
         self.rels = rels
         self.head_tail_pairs = head_tail_pairs
+        self.class_weight=class_weight
 
 
 def convert_examples_to_features(
