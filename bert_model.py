@@ -75,8 +75,7 @@ class HfBertClassifierModel(nn.Module):
                 token_type_ids=None,
                 position_ids=None,
                 head_mask=None,
-                inputs_embeds=None,
-                weight=None):
+                inputs_embeds=None):
         """Here, `X` is an np.array in which each element is a pair
         consisting of an index into the BERT embedding and a 1 or 0
         indicating whether the token is masked. The `fit` method will
@@ -166,7 +165,8 @@ class HfBertClassifier(TorchShallowNeuralClassifier):
                     active_preds = batch_preds.reshape(-1)[batch[4].reshape(-1)]
                     active_rels = batch[3].reshape(-1)[batch[4].reshape(-1)]
                     active_weight = batch[4].reshape(-1)[batch[4].reshape(-1)]
-                    err = loss(active_preds,active_rels,weight=active_weight)
+                    loss.weight = active_weight
+                    err = loss(active_preds,active_rels)
                     epoch_error += err.item()
                     self.opt.zero_grad()
                     err.backward()
