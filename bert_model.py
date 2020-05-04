@@ -90,7 +90,6 @@ class HfBertClassifierModel(nn.Module):
             position_ids=position_ids,
             head_mask=head_mask,
             inputs_embeds=inputs_embeds,
-            class_weight=class_weight
         )
         head = self.head(final_hidden_states)
         tail = self.tail(final_hidden_states)
