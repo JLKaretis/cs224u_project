@@ -280,7 +280,7 @@ ML_dataset = data_processor.Dataset('MedLine').from_training_data('MedLine')
 class InputFeatures(object):
     """A single set of features of data."""
 
-    def __init__(self, input_ids, input_mask, segment_ids, rels, head_tail_pairs):
+    def __init__(self, input_ids, input_mask, segment_ids, rels, head_tail_pairs,class_weight):
         self.input_ids = input_ids
         self.input_mask = input_mask
         self.segment_ids = segment_ids
