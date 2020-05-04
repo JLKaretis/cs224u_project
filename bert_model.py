@@ -152,7 +152,7 @@ class HfBertClassifier(TorchShallowNeuralClassifier):
         self.model.to(self.device)
         self.model.train()
         # Optimization:
-        loss = nn.BCELoss(weight=all_weight)
+        loss = nn.BCELoss()
         global_step = 0
         # Train:
         with tqdm(total=self.max_iter) as pbar:
@@ -164,7 +164,8 @@ class HfBertClassifier(TorchShallowNeuralClassifier):
                     batch_preds = self.model(**inputs)
                     active_preds = batch_preds.reshape(-1)[batch[4].reshape(-1)]
                     active_rels = batch[3].reshape(-1)[batch[4].reshape(-1)]
-                    err = loss(active_preds,active_rels)
+                    active_weight = batch[4].reshape(-1)[batch[4].reshape(-1)]
+                    err = loss(active_preds,active_rels,weight=active_weight)
                     epoch_error += err.item()
                     self.opt.zero_grad()
                     err.backward()
