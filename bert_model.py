@@ -44,7 +44,7 @@ class HfBertClassifierModel(nn.Module):
             nn.Linear(self.max_sentence_length, self.hidden_dim))
 
         # initialize a random tensor
-        self.L = torch.randn(self.hidden_dim, self.hidden_dim).to(self.device)
+        self.L = torch.randn(self.hidden_dim, self.hidden_dim)
 
     def save_pretrained(self, save_directory):
         """ Save a model and its configuration file to a directory, so that it
@@ -128,13 +128,14 @@ class HfBertClassifier(TorchShallowNeuralClassifier):
         # Incremental performance:
         X_dev = kwargs.get('X_dev')
         if X_dev is not None:
-            dev_iter = kwargs.get('dev_iter', 10)
+            dev_iter = kwargs.get('dev_iter', 5)
         # Data prep:
-        all_input_ids = torch.tensor([f.input_ids for f in X], dtype=torch.long).to(self.device)
-        all_input_mask = torch.tensor([f.input_mask for f in X], dtype=torch.long).to(self.device)
-        all_segment_ids = torch.tensor([f.segment_ids for f in X], dtype=torch.long).to(self.device)
-        all_rels = torch.tensor([f.rels for f in X], dtype=torch.float).to(self.device)
-        dataset = TensorDataset(all_input_ids, all_input_mask, all_segment_ids, all_rels)
+        all_input_ids = torch.tensor([f.input_ids for f in X], dtype=torch.long)
+        all_input_mask = torch.tensor([f.input_mask for f in X], dtype=torch.long)
+        all_segment_ids = torch.tensor([f.segment_ids for f in X], dtype=torch.long)
+        all_rels = torch.tensor([f.rels for f in X], dtype=torch.float)
+        all_pairs = torch.tensor([f.head_tail_pairs for f in X], dtype=torch.bool)
+        dataset = TensorDataset(all_input_ids, all_input_mask, all_segment_ids, all_rels, all_pairs)
         dataloader = torch.utils.data.DataLoader(
             dataset, batch_size=self.batch_size, shuffle=True,
             pin_memory=False) #cannot pin for GPU tensors
@@ -160,8 +161,9 @@ class HfBertClassifier(TorchShallowNeuralClassifier):
                     inputs = {"input_ids": batch[0], "attention_mask": batch[1]}
                     inputs["token_type_ids"] = (batch[2])
                     batch_preds = self.model(**inputs)
-                    err = loss(batch_preds.reshape([-1, self.max_sentence_length]),
-                               batch[3].reshape([-1, self.max_sentence_length]))
+                    active_preds = batch_preds.reshape(-1)[batch[4].reshape(-1)]
+                    active_rels = batch[3].reshape(-1)[batch[4].reshape(-1)]
+                    err = loss(active_preds,active_rels)
                     epoch_error += err.item()
                     self.opt.zero_grad()
                     err.backward()
@@ -169,7 +171,7 @@ class HfBertClassifier(TorchShallowNeuralClassifier):
                     global_step += 1
 
                     # Save model checkpoint
-                    if global_step % 10 == 0:
+                    if global_step % 50 == 0:
                         output_dir = os.path.join('checkpoints', "checkpoint-{}".format(global_step))
                         if not os.path.exists(output_dir):
                             os.makedirs(output_dir)
@@ -184,7 +186,10 @@ class HfBertClassifier(TorchShallowNeuralClassifier):
 
                 # Incremental predictions where possible:
                 if X_dev is not None and iteration > 0 and iteration % dev_iter == 0:
-                    self.dev_predictions[iteration] = self.predict(X_dev)
+                    preds = self.predict(X_dev)
+                    print(classification_report(np.asarray([item.rels for item in X_dev]).reshape(-1),
+                                                preds.reshape(-1),
+                                                digits=2))
                     self.model.train()
 
                 self.errors.append(epoch_error)
@@ -224,10 +229,10 @@ class HfBertClassifier(TorchShallowNeuralClassifier):
         with torch.no_grad():
             self.model.to(self.device)
             # Data prep:
-            all_input_ids = torch.tensor([f.input_ids for f in X], dtype=torch.long).to(self.device)
-            all_input_mask = torch.tensor([f.input_mask for f in X], dtype=torch.long).to(self.device)
-            all_segment_ids = torch.tensor([f.segment_ids for f in X], dtype=torch.long).to(self.device)
-            all_rels = torch.tensor([f.rels for f in X], dtype=torch.float).to(self.device)
+            all_input_ids = torch.tensor([f.input_ids for f in X], dtype=torch.long)
+            all_input_mask = torch.tensor([f.input_mask for f in X], dtype=torch.long)
+            all_segment_ids = torch.tensor([f.segment_ids for f in X], dtype=torch.long)
+            all_rels = torch.tensor([f.rels for f in X], dtype=torch.float)
             dataset = TensorDataset(all_input_ids, all_input_mask, all_segment_ids, all_rels)
             dataloader = torch.utils.data.DataLoader(
                 dataset, batch_size=self.batch_size, shuffle=True,
@@ -238,7 +243,7 @@ class HfBertClassifier(TorchShallowNeuralClassifier):
                 inputs = {"input_ids": batch[0], "attention_mask": batch[1]}
                 inputs["token_type_ids"] = (batch[2])
                 batch_preds = self.model(**inputs)
-                preds.append(torch.round(batch_preds).cpu().numpy())
+                preds.append(torch.round(batch_preds).to(dtype=torch.int).cpu().numpy())
 
             result = preds[0]
             for i in range(len(preds) - 1):
@@ -273,11 +278,12 @@ ML_dataset = data_processor.Dataset('MedLine').from_training_data('MedLine')
 class InputFeatures(object):
     """A single set of features of data."""
 
-    def __init__(self, input_ids, input_mask, segment_ids, rels):
+    def __init__(self, input_ids, input_mask, segment_ids, rels, head_tail_pairs):
         self.input_ids = input_ids
         self.input_mask = input_mask
         self.segment_ids = segment_ids
         self.rels = rels
+        self.head_tail_pairs = head_tail_pairs
 
 
 def convert_examples_to_features(
@@ -306,6 +312,8 @@ def convert_examples_to_features(
 
     counter = 0
 
+    types = set()
+
     for doc in dataset.documents:
         for sent in doc.sentences:
             counter += 1
@@ -322,12 +330,47 @@ def convert_examples_to_features(
                     relation_pairs[i].append(0)
 
             entity_map = {}
+
             for entity in sent.entities:
-                if len(entity.char_offset.split()) == 2:
+                if len(entity.char_offset.split('-')) == 2:
                     entity_map[entity._id] = entity.char_offset
 
-            for key in sent.map:
+            head_tail_pairs = []
 
+            for i, entity_head in enumerate(sent.entities):
+                for j, entity_tail in enumerate(sent.entities):
+                    if i < j:
+                        if len(entity_head.char_offset.split('-')) != 2 or \
+                                len(entity_tail.char_offset.split('-')) != 2:
+                            continue
+
+                        start_span = int(entity_head.char_offset.split('-')[0])
+                        end_span = int(entity_head.char_offset.split('-')[1])
+                        head_index = len(sent.text[:start_span].split())
+                        head_indices = []
+                        for word in sent.text[start_span:end_span+1].split():
+                            for _ in range(len(tokenizer.tokenize(word))):
+                                if head_indices:
+                                    head_indices.append(head_indices[-1] + 1)
+                                else:
+                                    head_indices.append(head_index)
+
+                        start_span = int(entity_tail.char_offset.split('-')[0])
+                        end_span = int(entity_tail.char_offset.split('-')[1])
+                        tail_index = len(sent.text[:start_span].split())
+                        tail_indices = []
+                        for word in sent.text[start_span:end_span+1].split():
+                            for _ in range(len(tokenizer.tokenize(word))):
+                                if tail_indices:
+                                    tail_indices.append(tail_indices[-1] + 1)
+                                else:
+                                    tail_indices.append(tail_index)
+
+                        for head in head_indices:
+                            for tail in tail_indices:
+                                head_tail_pairs.append((head + 1, tail + 1))
+
+            for key in sent.map:
                 if key not in entity_map:
                     continue
 
@@ -338,6 +381,8 @@ def convert_examples_to_features(
                 dst_indices = []
                 num_source_source = len(sent.text[source_start: source_end + 1].split())
                 num_dst_source = len(sent.text[dst_start: dst_end + 1].split())
+
+                types.add(sent.map[key][1])
 
                 curr_span = 0
                 for i, token in enumerate(word_tokens):
@@ -429,6 +474,10 @@ def convert_examples_to_features(
             for _ in range(padding_length):
                 relation_pairs_final = np.column_stack((rel, relation_pairs_final))
 
+            pair_map = np.zeros([max_seq_length, max_seq_length], dtype = int)
+            for pair in head_tail_pairs:
+                pair_map[pair[0], pair[1]] = 1
+
             assert len(input_ids) == max_seq_length
             assert len(input_mask) == max_seq_length
             assert len(segment_ids) == max_seq_length
@@ -436,13 +485,13 @@ def convert_examples_to_features(
 
             features.append(
                 InputFeatures(input_ids=input_ids, input_mask=input_mask,
-                              segment_ids=segment_ids, rels=relation_pairs_final)
+                              segment_ids=segment_ids, rels=relation_pairs_final,
+                              head_tail_pairs=pair_map)
             )
-
     return features
 
 
-def run_experiment(batch_size=32, max_iter=4, eta=0.00002, test_size=0.2, random_state=42, datasize=None):
+def run_experiment(batch_size=16, max_iter=10, eta=0.00002, test_size=0.2, random_state=42, datasize=None):
     print('Running exp')
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     max_sentence_length = 120
@@ -470,8 +519,8 @@ def run_experiment(batch_size=32, max_iter=4, eta=0.00002, test_size=0.2, random
     time = bert_experiment_1.fit(train, **{'X_dev': dev})
     bert_experiment_1_preds = bert_experiment_1.predict(test)
 
-    print(classification_report(bert_experiment_1_preds.reshape(-1),
-                                np.asarray([item.rels for item in test]).reshape(-1),
+    print(classification_report(np.asarray([item.rels for item in test]).reshape(-1),
+                                bert_experiment_1_preds.reshape(-1),
                                 digits=3))
 
 
