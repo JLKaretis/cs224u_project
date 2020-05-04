@@ -305,7 +305,7 @@ def convert_examples_to_features(
     pad_token_label_id=-100,
     sequence_a_segment_id=0,
     mask_padding_with_zero=True,
-    weight_positive_class=1000,
+    weight_positive_class=10000,
 ):
     """ Loads a data file into a list of `InputBatch`s
         `cls_token_at_end` define the location of the CLS token:
