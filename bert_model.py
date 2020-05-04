@@ -164,7 +164,7 @@ class HfBertClassifier(TorchShallowNeuralClassifier):
                     batch_preds = self.model(**inputs)
                     active_preds = batch_preds.reshape(-1)[batch[4].reshape(-1)]
                     active_rels = batch[3].reshape(-1)[batch[4].reshape(-1)]
-                    active_weight = batch[4].reshape(-1)[batch[4].reshape(-1)]
+                    active_weight = batch[5].reshape(-1)[batch[4].reshape(-1)]
                     loss.weight = active_weight
                     err = loss(active_preds,active_rels)
                     epoch_error += err.item()
